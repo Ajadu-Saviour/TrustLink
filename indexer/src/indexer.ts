@@ -93,6 +93,9 @@ export async function startIndexer(db: PrismaClient, redis: Redis | null = null)
     logger.info({ cursor, tip }, "Backfilling ledgers");
     try {
       cursor = await processRange(db, rpc, cursor, tip, redis);
+      // Update lag during backfill
+      const { sequence: latestAfterBackfill } = await rpc.getLatestLedger();
+      indexerLagLedgers.set(Math.max(0, latestAfterBackfill - cursor));
     } catch (err) {
       console.error("Error during backfill:", err);
     }
@@ -105,7 +108,9 @@ export async function startIndexer(db: PrismaClient, redis: Redis | null = null)
     const { sequence: latest } = await rpc.getLatestLedger();
     if (cursor <= latest) {
       cursor = await processRange(db, rpc, cursor, latest, redis);
-      indexerLagLedgers.set(latest - cursor);
+      // Compute lag against the current tip after processing
+      const { sequence: latestTipNow } = await rpc.getLatestLedger();
+      indexerLagLedgers.set(Math.max(0, latestTipNow - cursor));
     }
   }
 }

@@ -41,14 +41,28 @@ describe("REST Route: GET /attestations/:subject (Issue #931)", () => {
 
     mockDb.attestation.findMany.mockResolvedValue(testAttestations);
 
-    fastify.get<{ Params: { subject: string } }>(
+    fastify.get<{ Params: { subject: string }; Querystring: { limit?: string; after?: string } }>(
       "/attestations/:subject",
       async (req: any) => {
         // This test validates that req.params.subject is read (not req.params.address)
-        return mockDb.attestation.findMany({
-          where: { subject: req.params.subject },
-          orderBy: { timestamp: "desc" },
+        const limit = Math.min(parseInt(req.query.limit ?? "50", 10) || 50, 500);
+        const after = req.query.after;
+        const where: Record<string, any> = { subject: req.params.subject };
+        const cursor = after ? { id: after } : undefined;
+        
+        const attestations = await mockDb.attestation.findMany({
+          where,
+          orderBy: [{ timestamp: "desc" }, { id: "desc" }],
+          take: limit + 1,
+          skip: cursor ? 1 : 0,
+          cursor,
         });
+
+        const hasMore = attestations.length > limit;
+        const items = attestations.slice(0, limit);
+        const nextCursor = hasMore ? items[items.length - 1]?.id : null;
+
+        return { items, nextCursor };
       }
     );
 
@@ -59,11 +73,13 @@ describe("REST Route: GET /attestations/:subject (Issue #931)", () => {
 
     expect(response.statusCode).toBe(200);
     const result = JSON.parse(response.body);
-    expect(result).toEqual(testAttestations);
-    expect(mockDb.attestation.findMany).toHaveBeenCalledWith({
-      where: { subject: testSubject },
-      orderBy: { timestamp: "desc" },
-    });
+    expect(result.items).toEqual(testAttestations);
+    expect(mockDb.attestation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { subject: testSubject },
+        orderBy: [{ timestamp: "desc" }, { id: "desc" }],
+      })
+    );
   });
 
   it("should correctly filter attestations by subject parameter", async () => {
@@ -81,13 +97,27 @@ describe("REST Route: GET /attestations/:subject (Issue #931)", () => {
 
     mockDb.attestation.findMany.mockResolvedValue([att1]);
 
-    fastify.get<{ Params: { subject: string } }>(
+    fastify.get<{ Params: { subject: string }; Querystring: { limit?: string; after?: string } }>(
       "/attestations/:subject",
       async (req: any) => {
-        return mockDb.attestation.findMany({
-          where: { subject: req.params.subject },
-          orderBy: { timestamp: "desc" },
+        const limit = Math.min(parseInt(req.query.limit ?? "50", 10) || 50, 500);
+        const after = req.query.after;
+        const where: Record<string, any> = { subject: req.params.subject };
+        const cursor = after ? { id: after } : undefined;
+        
+        const attestations = await mockDb.attestation.findMany({
+          where,
+          orderBy: [{ timestamp: "desc" }, { id: "desc" }],
+          take: limit + 1,
+          skip: cursor ? 1 : 0,
+          cursor,
         });
+
+        const hasMore = attestations.length > limit;
+        const items = attestations.slice(0, limit);
+        const nextCursor = hasMore ? items[items.length - 1]?.id : null;
+
+        return { items, nextCursor };
       }
     );
 
@@ -97,23 +127,39 @@ describe("REST Route: GET /attestations/:subject (Issue #931)", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(mockDb.attestation.findMany).toHaveBeenCalledWith({
-      where: { subject: subject1 },
-      orderBy: { timestamp: "desc" },
-    });
+    expect(mockDb.attestation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { subject: subject1 },
+        orderBy: [{ timestamp: "desc" }, { id: "desc" }],
+      })
+    );
   });
 
   it("should return empty list when subject has no attestations", async () => {
     const testSubject = "GDXLKEY5TR4IDEVSTRYUNYY3DPXQKQNSTDJ7HIVNFTJYQHOZXB7CRQME";
     mockDb.attestation.findMany.mockResolvedValue([]);
 
-    fastify.get<{ Params: { subject: string } }>(
+    fastify.get<{ Params: { subject: string }; Querystring: { limit?: string; after?: string } }>(
       "/attestations/:subject",
       async (req: any) => {
-        return mockDb.attestation.findMany({
-          where: { subject: req.params.subject },
-          orderBy: { timestamp: "desc" },
+        const limit = Math.min(parseInt(req.query.limit ?? "50", 10) || 50, 500);
+        const after = req.query.after;
+        const where: Record<string, any> = { subject: req.params.subject };
+        const cursor = after ? { id: after } : undefined;
+        
+        const attestations = await mockDb.attestation.findMany({
+          where,
+          orderBy: [{ timestamp: "desc" }, { id: "desc" }],
+          take: limit + 1,
+          skip: cursor ? 1 : 0,
+          cursor,
         });
+
+        const hasMore = attestations.length > limit;
+        const items = attestations.slice(0, limit);
+        const nextCursor = hasMore ? items[items.length - 1]?.id : null;
+
+        return { items, nextCursor };
       }
     );
 
@@ -124,11 +170,13 @@ describe("REST Route: GET /attestations/:subject (Issue #931)", () => {
 
     expect(response.statusCode).toBe(200);
     const result = JSON.parse(response.body);
-    expect(result).toEqual([]);
-    expect(mockDb.attestation.findMany).toHaveBeenCalledWith({
-      where: { subject: testSubject },
-      orderBy: { timestamp: "desc" },
-    });
+    expect(result.items).toEqual([]);
+    expect(mockDb.attestation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { subject: testSubject },
+        orderBy: [{ timestamp: "desc" }, { id: "desc" }],
+      })
+    );
   });
 
   it("should order attestations by timestamp in descending order", async () => {
@@ -162,13 +210,27 @@ describe("REST Route: GET /attestations/:subject (Issue #931)", () => {
 
     mockDb.attestation.findMany.mockResolvedValue(attestations);
 
-    fastify.get<{ Params: { subject: string } }>(
+    fastify.get<{ Params: { subject: string }; Querystring: { limit?: string; after?: string } }>(
       "/attestations/:subject",
       async (req: any) => {
-        return mockDb.attestation.findMany({
-          where: { subject: req.params.subject },
-          orderBy: { timestamp: "desc" },
+        const limit = Math.min(parseInt(req.query.limit ?? "50", 10) || 50, 500);
+        const after = req.query.after;
+        const where: Record<string, any> = { subject: req.params.subject };
+        const cursor = after ? { id: after } : undefined;
+        
+        const attestations = await mockDb.attestation.findMany({
+          where,
+          orderBy: [{ timestamp: "desc" }, { id: "desc" }],
+          take: limit + 1,
+          skip: cursor ? 1 : 0,
+          cursor,
         });
+
+        const hasMore = attestations.length > limit;
+        const items = attestations.slice(0, limit);
+        const nextCursor = hasMore ? items[items.length - 1]?.id : null;
+
+        return { items, nextCursor };
       }
     );
 
@@ -178,9 +240,11 @@ describe("REST Route: GET /attestations/:subject (Issue #931)", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(mockDb.attestation.findMany).toHaveBeenCalledWith({
-      where: { subject: testSubject },
-      orderBy: { timestamp: "desc" },
-    });
+    expect(mockDb.attestation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { subject: testSubject },
+        orderBy: [{ timestamp: "desc" }, { id: "desc" }],
+      })
+    );
   });
 });
