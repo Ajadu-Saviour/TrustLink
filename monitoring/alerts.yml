@@ -1,0 +1,133 @@
+groups:
+  - name: trustlink
+    rules:
+      # Fires immediately when the admin is initialized (adm_init event).
+      # An unexpected initialization could indicate a compromised admin key.
+      - alert: TrustLinkAdminInitialized
+        expr: increase(trustlink_events_processed_by_type_total{type="adm_init"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "TrustLink admin initialized"
+          description: >
+            The TrustLink contract admin has been initialized. Verify this
+            change was intentional and authorized. If unexpected, treat as a
+            security incident and rotate admin keys immediately.
+
+      # Fires immediately when the admin is transferred (adm_xfer event).
+      # An unexpected transfer could indicate an attacker taking over admin control.
+      - alert: TrustLinkAdminTransferred
+        expr: increase(trustlink_events_processed_by_type_total{type="adm_xfer"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "TrustLink admin transferred"
+          description: >
+            The TrustLink contract admin has been transferred to a new address.
+            Verify this transfer was intentional. If unexpected, treat as a
+            security incident and investigate immediately.
+
+      # Fires when the contract is paused via the admin pause() function.
+      # All attestation write operations are halted while this is active.
+      # NOTE: no trustlink_contract_paused metric is currently emitted by the
+      # indexer, so this alert can never fire until that metric is added
+      # (indexer/src/metrics.ts) — this is a rename-incompatible gap, not a
+      # simple metric-name fix.
+      - alert: TrustLinkContractPaused
+        expr: trustlink_contract_paused == 1
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "TrustLink contract is paused"
+          description: >
+            The TrustLink contract has been paused. All attestation creation
+            and revocation is halted. Verify this was an intentional admin
+            action and unpause once the incident is resolved.
+
+      # Fires when an issuer is removed from the registry.
+      # Existing attestations from the removed issuer remain valid but no new
+      # ones can be created, and the issuer can no longer revoke their own attestations.
+      - alert: TrustLinkIssuerRemoved
+        expr: increase(trustlink_events_processed_by_type_total{type="iss_rem"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "TrustLink issuer removed"
+          description: >
+            An issuer has been removed from the TrustLink registry in the last
+            5 minutes. Confirm the removal was intentional. Check whether
+            affected attestations need to be transferred to a successor issuer.
+
+      # Fires when the revocation rate spikes above 10 revocations in 5 minutes.
+      # This may indicate a compromised issuer key, a bulk compliance action,
+      # or a bug in issuer automation.
+      - alert: TrustLinkHighRevocationRate
+        expr: increase(trustlink_revocations_total[5m]) > 10
+        for: 0m
+        labels:
+          severity: high
+        annotations:
+          summary: "High attestation revocation rate"
+          description: >
+            More than 10 attestations have been revoked in the last 5 minutes
+            (current: {{ $value }}). Investigate whether this is a planned
+            compliance sweep, an automation bug, or a compromised issuer key.
+
+      # SLO: Indexer lag SLO — the indexer must stay within 100 ledgers of the chain
+      # tip for ≥ 99 % of the time over a 30-day window (≈ 7.2 h/month error budget).
+      # Threshold source: SLO-2 in docs/monitoring.md §11.
+      # Fires when the indexer has violated the SLO lag budget for 2 consecutive minutes.
+      - alert: TrustLinkIndexerLag
+        expr: trustlink_indexer_lag_ledgers > 100
+        for: 2m
+        labels:
+          severity: high
+          slo: indexer_lag
+        annotations:
+          summary: "TrustLink indexer is lagging (SLO-2 breach)"
+          description: >
+            The TrustLink event indexer is {{ $value }} ledgers behind the
+            chain tip (SLO-2 threshold: 100 ledgers, target ≥ 99 % compliance).
+            Event-based alerts may be delayed or missing. Check the indexer
+            process and RPC connectivity. Each minute above threshold burns
+            ~0.23 % of the monthly error budget.
+
+      # Per-issuer revocation spike alert (#824).
+      # Fires when a single issuer exceeds REVOCATION_SPIKE_THRESHOLD (default 10)
+      # revocations in a 5-minute rolling window.  A spike may indicate a compromised
+      # issuer key, a bulk compliance action, or a bug in issuer automation.
+      # Adjust the threshold via the REVOCATION_SPIKE_THRESHOLD label override or by
+      # editing the `> 10` literal below after one week of baseline observation.
+      - alert: TrustLinkIssuerRevocationSpike
+        expr: increase(trustlink_issuer_revocations_total[5m]) > 10
+        for: 0m
+        labels:
+          severity: high
+        annotations:
+          summary: "Revocation spike for issuer {{ $labels.issuer }}"
+          description: >
+            Issuer {{ $labels.issuer }} has revoked {{ $value | printf "%.0f" }}
+            attestations in the last 5 minutes, exceeding the configurable
+            threshold of 10. This may indicate a compromised issuer key, a
+            bulk compliance sweep, or an automation bug. Follow the runbook in
+            docs/monitoring.md §8 to determine the root cause.
+
+      # Fires when reconciliation detects sustained drift between the indexer's
+      # view of state and the chain (#1207).
+      - alert: TrustLinkReconciliationDrift
+        expr: increase(trustlink_reconciliation_drift_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: high
+        annotations:
+          summary: "TrustLink indexer reconciliation drift detected"
+          description: >
+            The indexer's reconciliation job has recorded
+            {{ $value | printf "%.0f" }} drift(s) in the last 15 minutes,
+            meaning the indexer's view of state has diverged from the chain.
+            Investigate the indexer's event processing pipeline for missed
+            or misapplied events.

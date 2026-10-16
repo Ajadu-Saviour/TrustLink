@@ -1,0 +1,66 @@
+{{- if .Values.canary.enabled | default false }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "trustlink-indexer.fullname" . }}-canary
+  labels:
+    {{- include "trustlink-indexer.labels" . | nindent 4 }}
+    app-version: canary
+  annotations:
+    description: "Canary deployment for gradual rollout testing"
+spec:
+  replicas: {{ .Values.canary.replicaCount | default .Values.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "trustlink-indexer.selectorLabels" . | nindent 6 }}
+      deployment-type: canary
+  template:
+    metadata:
+      labels:
+        {{- include "trustlink-indexer.selectorLabels" . | nindent 8 }}
+        deployment-type: canary
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.port }}"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: indexer
+        image: "{{ .Values.image.repository }}:{{ .Values.canary.imageTag | default .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.port }}
+          protocol: TCP
+        - name: graphql
+          containerPort: {{ .Values.gqlPort }}
+          protocol: TCP
+        env:
+        - name: RPC_URL
+          value: {{ .Values.rpcUrl }}
+        - name: CONTRACT_ID
+          value: {{ .Values.contractId }}
+        - name: GENESIS_LEDGER
+          value: "{{ .Values.genesisLedger }}"
+        - name: PORT
+          value: "{{ .Values.port }}"
+        - name: GQL_PORT
+          value: "{{ .Values.gqlPort }}"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "trustlink-indexer.fullname" . }}
+              key: DATABASE_URL
+        - name: REDIS_URL
+          value: {{ .Values.redisUrl | quote }}
+        - name: CANARY_DEPLOYMENT
+          value: "true"
+        startupProbe:
+          {{- toYaml .Values.startupProbe | nindent 10 }}
+        livenessProbe:
+          {{- toYaml .Values.livenessProbe | nindent 10 }}
+        readinessProbe:
+          {{- toYaml .Values.readinessProbe | nindent 10 }}
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+{{- end }}

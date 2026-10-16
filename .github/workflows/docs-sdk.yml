@@ -1,0 +1,120 @@
+name: Publish SDK Docs to GitHub Pages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-ts-docs:
+    name: Generate TypeDoc
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["18", "20", "22"]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+          cache-dependency-path: sdk/typescript/package-lock.json
+
+      - name: Install dependencies
+        working-directory: sdk/typescript
+        run: npm ci
+
+      - name: Generate docs
+        working-directory: sdk/typescript
+        run: npm run docs
+
+      - name: Upload TypeScript docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ts-docs-node${{ matrix.node-version }}
+          path: sdk/typescript/docs/api
+
+  build-python-docs:
+    name: Generate pdoc (Python SDK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package and pdoc
+        working-directory: bindings/python
+        run: pip install -e ".[dev]"
+
+      - name: Generate pdoc API reference
+        working-directory: bindings/python
+        run: pdoc trustlink --output-dir docs/api --docformat google
+
+      - name: Upload Python docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-docs
+          path: bindings/python/docs/api
+
+  assemble-docs:
+    name: Assemble combined Pages artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build-ts-docs, build-python-docs]
+    steps:
+      - name: Download TypeScript docs (Node 18)
+        uses: actions/download-artifact@v4
+        with:
+          name: ts-docs-node18
+          path: site/
+
+      - name: Download TypeScript docs (Node 20)
+        uses: actions/download-artifact@v4
+        with:
+          name: ts-docs-node20
+          path: site/
+
+      - name: Download TypeScript docs (Node 22)
+        uses: actions/download-artifact@v4
+        with:
+          name: ts-docs-node22
+          path: site/
+
+      - name: Download Python docs
+        uses: actions/download-artifact@v4
+        with:
+          name: python-docs
+          path: site/python/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: site/
+
+  deploy-docs:
+    name: Deploy to GitHub Pages
+    needs: assemble-docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
