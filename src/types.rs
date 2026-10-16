@@ -1,5 +1,27 @@
 use soroban_sdk::{contracterror, contracttype, Address, Env, String};
 
+/// Tier levels for issuers.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IssuerTier {
+    /// Basic issuer tier with standard capabilities.
+    Basic,
+    /// Advanced issuer tier with extended capabilities.
+    Advanced,
+    /// Premium issuer tier with all capabilities.
+    Premium,
+}
+
+/// Metadata about an issuer.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IssuerMetadata {
+    /// The issuer's address.
+    pub address: Address,
+    /// The issuer's current tier.
+    pub tier: IssuerTier,
+}
+
 /// A single attestation record stored on-chain.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]

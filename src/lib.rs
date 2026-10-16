@@ -17,7 +17,7 @@ mod events;
 mod test;
 
 use soroban_sdk::{contract, contractimpl, Address, Env, String, Vec};
-use types::{Attestation, AttestationStatus, Error};
+use types::{Attestation, AttestationStatus, Error, IssuerTier};
 use storage::Storage;
 use validation::Validation;
 use events::Events;
@@ -103,6 +103,34 @@ impl TrustLinkContract {
         Validation::require_admin(&env, &admin)?;
 
         Storage::remove_issuer(&env, &issuer);
+        Ok(())
+    }
+
+    /// Set the tier level for an issuer.
+    ///
+    /// Only the current admin may call this function. This updates the issuer's
+    /// tier and emits an `iss_tier` event for indexer consumption.
+    ///
+    /// # Parameters
+    /// - `admin` — current administrator address (must authorize).
+    /// - `issuer` — issuer address whose tier is being updated.
+    /// - `tier` — new [`IssuerTier`] level.
+    ///
+    /// # Errors
+    /// - [`Error::NotInitialized`] — contract has not been initialized.
+    /// - [`Error::Unauthorized`] — `admin` is not the registered administrator.
+    /// - [`Error::NotFound`] — `issuer` is not registered.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// client.set_issuer_tier(&admin, &issuer_address, &IssuerTier::Premium);
+    /// ```
+    pub fn set_issuer_tier(env: Env, admin: Address, issuer: Address, tier: IssuerTier) -> Result<(), Error> {
+        admin.require_auth();
+        Validation::require_admin(&env, &admin)?;
+
+        Storage::set_issuer_tier(&env, &issuer, tier.clone())?;
+        Events::issuer_tier_updated(&env, &issuer, &tier);
         Ok(())
     }
 
@@ -455,5 +483,25 @@ impl TrustLinkContract {
     /// ```
     pub fn get_admin(env: Env) -> Result<Address, Error> {
         Storage::get_admin(&env)
+    }
+
+    /// Get the tier level for an issuer.
+    ///
+    /// # Parameters
+    /// - `issuer` — issuer address to query.
+    ///
+    /// # Returns
+    /// The issuer's current [`IssuerTier`].
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] — `issuer` is not registered.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let tier = client.get_issuer_tier(&issuer_address);
+    /// ```
+    pub fn get_issuer_tier(env: Env, issuer: Address) -> Result<IssuerTier, Error> {
+        let metadata = Storage::get_issuer_metadata(&env, &issuer)?;
+        Ok(metadata.tier)
     }
 }

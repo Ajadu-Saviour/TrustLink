@@ -4,18 +4,36 @@
 //! that off-chain indexers can react without polling contract storage.
 
 use soroban_sdk::{symbol_short, Address, Env, String};
-use crate::types::Attestation;
+use crate::types::{Attestation, IssuerTier};
 
 /// Emits TrustLink contract events.
 pub struct Events;
 
 impl Events {
+    /// Emit an event when an issuer's tier is changed.
+    ///
+    /// # Event schema
+    /// ```text
+    /// topics: ("iss_tier", issuer: Address)
+    /// data:   tier: IssuerTier
+    /// ```
+    ///
+    /// # Parameters
+    /// - `issuer` — the issuer whose tier changed.
+    /// - `tier` — the new tier level.
+    pub fn issuer_tier_updated(env: &Env, issuer: &Address, tier: &IssuerTier) {
+        env.events().publish(
+            (symbol_short!("iss_tier"), issuer.clone()),
+            tier.clone(),
+        );
+    }
+
     /// Emit an event when a new attestation is created.
     ///
     /// # Event schema
     /// ```text
     /// topics: ("created", subject: Address)
-    /// data:   (attestation_id: String, issuer: Address, claim_type: String, timestamp: u64)
+    /// data:   (attestation_id: String, issuer: Address, claim_type: String, timestamp: u64, expires_at: Option<u64>)
     /// ```
     ///
     /// # Parameters
@@ -28,6 +46,7 @@ impl Events {
                 attestation.issuer.clone(),
                 attestation.claim_type.clone(),
                 attestation.timestamp,
+                attestation.expiration,
             ),
         );
     }
