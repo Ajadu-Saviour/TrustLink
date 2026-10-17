@@ -20,13 +20,15 @@ pub enum StorageKey {
     TtlConfig,
     ContractConfig,
     Issuer(Address),
+    /// Issuer tier metadata.
+    IssuerMetadata(Address),
+    /// Full [`Attestation`] record keyed by its ID.
     Bridge(Address),
     /// Ordered list of all registered bridge addresses.
     BridgeList,
     Attestation(String),
     SubjectAttestations(Address),
     IssuerAttestations(Address),
-    IssuerMetadata(Address),
     SubjectAttestationChunk(Address, u32),
     IssuerAttestationChunk(Address, u32),
     ClaimType(String),
@@ -272,10 +274,21 @@ impl Storage {
         env.storage().persistent().has(&StorageKey::Issuer(address.clone()))
     }
 
+    /// Add `issuer` to the registry and refresh its TTL. Also initialize with Basic tier.
     pub fn add_issuer(env: &Env, issuer: &Address) {
         let key = StorageKey::Issuer(issuer.clone());
         let ttl = get_ttl_lifetime(env);
         env.storage().persistent().set(&key, &true);
+        env.storage().persistent().extend_ttl(&key, INSTANCE_LIFETIME, INSTANCE_LIFETIME);
+        
+        // Initialize issuer metadata with Basic tier
+        let metadata = IssuerMetadata {
+            address: issuer.clone(),
+            tier: IssuerTier::Basic,
+        };
+        let metadata_key = StorageKey::IssuerMetadata(issuer.clone());
+        env.storage().persistent().set(&metadata_key, &metadata);
+        env.storage().persistent().extend_ttl(&metadata_key, INSTANCE_LIFETIME, INSTANCE_LIFETIME);
         env.storage().persistent().extend_ttl(&key, ttl, ttl);
         // Maintain ordered IssuerList
         let mut list = Self::get_issuer_list(env);
@@ -292,6 +305,31 @@ impl Storage {
 
     pub fn remove_issuer(env: &Env, issuer: &Address) {
         env.storage().persistent().remove(&StorageKey::Issuer(issuer.clone()));
+        env.storage().persistent().remove(&StorageKey::IssuerMetadata(issuer.clone()));
+    }
+
+    /// Get the issuer metadata (tier).
+    pub fn get_issuer_metadata(env: &Env, issuer: &Address) -> Result<IssuerMetadata, Error> {
+        env.storage()
+            .persistent()
+            .get(&StorageKey::IssuerMetadata(issuer.clone()))
+            .ok_or(Error::NotFound)
+    }
+
+    /// Set the issuer tier and refresh TTL.
+    pub fn set_issuer_tier(env: &Env, issuer: &Address, tier: IssuerTier) -> Result<(), Error> {
+        if !Self::is_issuer(env, issuer) {
+            return Err(Error::NotFound);
+        }
+        
+        let mut metadata = Self::get_issuer_metadata(env, issuer)?;
+        metadata.tier = tier;
+        
+        let key = StorageKey::IssuerMetadata(issuer.clone());
+        env.storage().persistent().set(&key, &metadata);
+        env.storage().persistent().extend_ttl(&key, INSTANCE_LIFETIME, INSTANCE_LIFETIME);
+        
+        Ok(())
         // Remove from IssuerList
         let existing = Self::get_issuer_list(env);
         let mut updated = Vec::new(env);

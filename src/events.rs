@@ -1,5 +1,4 @@
 use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
-
 use crate::types::{Attestation, IssuerTier};
 
 // Event topic constants (max 9 chars for symbol_short!)
@@ -39,6 +38,16 @@ const TOPIC_MAX_SUBJ: Symbol = symbol_short!("mx_subj");
 pub struct Events;
 
 impl Events {
+    /// Emit an event when a new attestation is created.
+    ///
+    /// # Event schema
+    /// ```text
+    /// topics: ("created", subject: Address)
+    /// data:   (attestation_id: String, issuer: Address, claim_type: String, timestamp: u64, expires_at: Option<u64>)
+    /// ```
+    ///
+    /// # Parameters
+    /// - `attestation` — the newly created attestation.
     pub fn admin_initialized(env: &Env, admin: &Address, timestamp: u64) {
         env.events()
             .publish((TOPIC_ADM_INIT,), (admin.clone(), timestamp));
@@ -52,6 +61,7 @@ impl Events {
                 attestation.issuer.clone(),
                 attestation.claim_type.clone(),
                 attestation.timestamp,
+                attestation.expiration,
                 attestation.metadata.clone(),
             ),
         );

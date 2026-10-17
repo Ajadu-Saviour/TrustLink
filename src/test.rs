@@ -12297,3 +12297,97 @@ mod attestation_id_stability_property_tests {
         }
     }
 }
+
+// ── Issuer tier tests ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_issuer_tier_initialized_to_basic() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    let tier = client.get_issuer_tier(&issuer);
+    assert_eq!(tier, types::IssuerTier::Basic);
+}
+
+#[test]
+fn test_set_issuer_tier() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    client.set_issuer_tier(&admin, &issuer, types::IssuerTier::Premium);
+    let tier = client.get_issuer_tier(&issuer);
+    assert_eq!(tier, types::IssuerTier::Premium);
+
+    client.set_issuer_tier(&admin, &issuer, types::IssuerTier::Advanced);
+    let tier = client.get_issuer_tier(&issuer);
+    assert_eq!(tier, types::IssuerTier::Advanced);
+}
+
+#[test]
+fn test_issuer_tier_event_emitted() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let (contract_id, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+    client.set_issuer_tier(&admin, &issuer, types::IssuerTier::Premium);
+
+    let iss_tier_sym = soroban_sdk::symbol_short!("iss_tier");
+    let found = env.events().all().iter().any(|(id, topics, _)| {
+        *id == contract_id && topics.get(0).map(|v| v.shallow_eq(&iss_tier_sym.to_val())).unwrap_or(false)
+    });
+    assert!(found, "expected iss_tier event to be emitted");
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_set_issuer_tier_unauthorized() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let other = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    // Non-admin trying to set tier should panic
+    client.set_issuer_tier(&other, &issuer, types::IssuerTier::Premium);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_get_issuer_tier_not_found() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+    // Don't register the issuer
+
+    // Trying to get tier for unregistered issuer should panic NotFound
+    client.get_issuer_tier(&issuer);
+}

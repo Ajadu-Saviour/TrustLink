@@ -1,4 +1,5 @@
 //! Shared data types and error codes for TrustLink.
+//! Shared data types and error codes for TrustLink.
 //!
 //! This module defines all contract types including:
 //! - Core attestation types (Attestation, AttestationRequest, MultiSigProposal)
