@@ -1,5 +1,4 @@
 use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
-
 use crate::types::{Attestation, IssuerTier};
 
 // Event topic constants (max 9 chars for symbol_short!)
@@ -33,10 +32,22 @@ const TOPIC_WL_ON: Symbol = symbol_short!("wl_on");
 const TOPIC_WL_ADD: Symbol = symbol_short!("wl_add");
 const TOPIC_WL_REM: Symbol = symbol_short!("wl_rem");
 const TOPIC_TPL_DEL: Symbol = symbol_short!("tpl_del");
+const TOPIC_BUNDLE: Symbol = symbol_short!("bundle");
+const TOPIC_MAX_SUBJ: Symbol = symbol_short!("mx_subj");
 
 pub struct Events;
 
 impl Events {
+    /// Emit an event when a new attestation is created.
+    ///
+    /// # Event schema
+    /// ```text
+    /// topics: ("created", subject: Address)
+    /// data:   (attestation_id: String, issuer: Address, claim_type: String, timestamp: u64, expires_at: Option<u64>)
+    /// ```
+    ///
+    /// # Parameters
+    /// - `attestation` — the newly created attestation.
     pub fn admin_initialized(env: &Env, admin: &Address, timestamp: u64) {
         env.events()
             .publish((TOPIC_ADM_INIT,), (admin.clone(), timestamp));
@@ -50,6 +61,7 @@ impl Events {
                 attestation.issuer.clone(),
                 attestation.claim_type.clone(),
                 attestation.timestamp,
+                attestation.expiration,
                 attestation.metadata.clone(),
             ),
         );
@@ -94,18 +106,6 @@ impl Events {
         );
     }
 
-    pub fn attestation_revoked_with_reason(
-        env: &Env,
-        attestation_id: &String,
-        issuer: &Address,
-        reason: &Option<String>,
-    ) {
-        env.events().publish(
-            (TOPIC_REVOKED, issuer.clone()),
-            (attestation_id.clone(), reason.clone()),
-        );
-    }
-
     pub fn attestation_renewed(
         env: &Env,
         attestation_id: &String,
@@ -137,7 +137,7 @@ impl Events {
         timestamp: u64,
     ) {
         env.events().publish(
-            (symbol_short!("del_req"), subject.clone()),
+            (TOPIC_DEL_REQ, subject.clone()),
             (attestation_id.clone(), timestamp),
         );
     }
@@ -146,18 +146,6 @@ impl Events {
         env.events().publish(
             (TOPIC_EXPIRED, subject.clone()),
             attestation_id.clone(),
-        );
-    }
-
-    pub fn deletion_requested(
-        env: &Env,
-        subject: &Address,
-        attestation_id: &String,
-        timestamp: u64,
-    ) {
-        env.events().publish(
-            (TOPIC_DEL_REQ, subject.clone()),
-            (attestation_id.clone(), timestamp),
         );
     }
 
@@ -248,6 +236,7 @@ impl Events {
         );
     }
 
+    /// Emitted when an attestation's issuer is changed by the admin.
     pub fn attestation_transferred(
         env: &Env,
         attestation_id: &String,
@@ -255,7 +244,7 @@ impl Events {
         new_issuer: &Address,
     ) {
         env.events().publish(
-            (symbol_short!("att_xfer"), old_issuer.clone()),
+            (symbol_short!("xfer"), old_issuer.clone()),
             (attestation_id.clone(), new_issuer.clone()),
         );
     }
@@ -293,19 +282,6 @@ impl Events {
     pub fn contract_unpaused(env: &Env, admin: &Address, timestamp: u64) {
         env.events()
             .publish((symbol_short!("unpaused"),), (admin.clone(), timestamp));
-    }
-
-    /// Emitted when an attestation's issuer is changed by the admin.
-    pub fn attestation_transferred(
-        env: &Env,
-        attestation_id: &String,
-        old_issuer: &Address,
-        new_issuer: &Address,
-    ) {
-        env.events().publish(
-            (symbol_short!("xfer"), old_issuer.clone()),
-            (attestation_id.clone(), new_issuer.clone()),
-        );
     }
 
     /// Emitted when a proposer cancels a multisig proposal.
@@ -483,6 +459,31 @@ impl Events {
         env.events().publish(
             (symbol_short!("tl_start"),),
             (proposal_id, quorum_reached_at),
+        );
+    }
+
+    /// Emitted when a bundle of attestations is created.
+    pub fn bundle_created(env: &Env, bundle: &crate::types::AttestationBundle) {
+        env.events().publish(
+            (TOPIC_BUNDLE, bundle.subject.clone()),
+            (
+                bundle.id.clone(),
+                bundle.issuer.clone(),
+                bundle.claim_types.clone(),
+                bundle.timestamp,
+                bundle.attestation_ids.clone(),
+            ),
+        );
+    }
+
+    /// Emitted when the admin sets the max attestations per subject limit.
+    pub fn max_attestations_per_subject_changed(env: &Env, admin: &Address, limit: Option<u32>) {
+        env.events().publish(
+            (TOPIC_MAX_SUBJ, admin.clone()),
+            (
+                "max_per_subject",
+                limit.unwrap_or(0),
+            ),
         );
     }
 }

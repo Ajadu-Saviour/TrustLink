@@ -1,5 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { createHmac } from "crypto";
+import { webhookDeliveriesSuccessTotal, webhookDeliveriesFailureTotal } from "./metrics";
+import { validateWebhookUrl } from "./webhook-validation";
 
 export const MAX_ATTEMPTS = 5;
 
@@ -36,6 +38,17 @@ export async function deliverWithRetry(
   eventType: string,
   body: string
 ): Promise<void> {
+  // Validate URL at delivery time to catch DNS rebinding attacks
+  try {
+    await validateWebhookUrl(url);
+  } catch (err) {
+    const errorMessage = `webhook url validation failed: ${err instanceof Error ? err.message : "unknown"}`;
+    console.error(`Webhook ${url} failed validation:`, err);
+    webhookDeliveriesFailureTotal.inc();
+    await persistFailure(db, webhookId, url, eventType, body, 400, errorMessage, 1);
+    return;
+  }
+
   const sig = sign(secret, body);
   let lastStatusCode: number | undefined;
   let lastError: string | undefined;
@@ -50,9 +63,29 @@ export async function deliverWithRetry(
         },
         body,
         signal: AbortSignal.timeout(10_000),
+        redirect: "manual",
       });
 
-      if (res.ok) return;
+      if (res.ok) {
+        webhookDeliveriesSuccessTotal.inc();
+        return;
+      }
+
+      // Check for redirect to private address
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get("location");
+        if (location) {
+          try {
+            await validateWebhookUrl(location);
+          } catch (err) {
+            const errorMessage = `redirect to invalid url: ${location}`;
+            console.warn(`Webhook ${url} redirected to blocked location: ${location}`);
+            webhookDeliveriesFailureTotal.inc();
+            await persistFailure(db, webhookId, url, eventType, body, res.status, errorMessage, attempt);
+            return;
+          }
+        }
+      }
 
       lastStatusCode = res.status;
       lastError = `HTTP ${res.status}`;
@@ -60,6 +93,7 @@ export async function deliverWithRetry(
       // 4xx errors are not retried (client misconfiguration)
       if (res.status >= 400 && res.status < 500) {
         console.warn(`Webhook ${url} returned ${res.status} — not retrying`);
+        webhookDeliveriesFailureTotal.inc();
         await persistFailure(db, webhookId, url, eventType, body, res.status, lastError, attempt);
         return;
       }
@@ -69,6 +103,7 @@ export async function deliverWithRetry(
       lastError = err instanceof Error ? err.message : String(err);
       if (attempt === MAX_ATTEMPTS) {
         console.error(`Webhook delivery to ${url} failed after ${MAX_ATTEMPTS} attempts:`, err);
+        webhookDeliveriesFailureTotal.inc();
         await persistFailure(db, webhookId, url, eventType, body, lastStatusCode, lastError, MAX_ATTEMPTS);
         return;
       }
@@ -117,6 +152,21 @@ export async function replayFailure(
   if (failure.status === "RECOVERED") return { success: true };
   if (failure.status === "RETRYING") return { success: false, error: "Retry already in progress" };
 
+  // Validate URL before retrying
+  try {
+    await validateWebhookUrl(failure.url);
+  } catch (err) {
+    await db.webhookFailure.update({
+      where: { id: failureId },
+      data: {
+        status: "FAILED",
+        errorMessage: `url validation failed: ${err instanceof Error ? err.message : "unknown"}`,
+        attemptCount: { increment: 1 },
+      },
+    });
+    return { success: false, error: "url validation failed" };
+  }
+
   // Mark as RETRYING to prevent concurrent retries
   await db.webhookFailure.update({
     where: { id: failureId },
@@ -139,11 +189,32 @@ export async function replayFailure(
       },
       body: failure.payload,
       signal: AbortSignal.timeout(10_000),
+      redirect: "manual",
     });
 
     if (res.ok) {
       await db.webhookFailure.delete({ where: { id: failureId } });
       return { success: true, statusCode: res.status };
+    }
+
+    // Check for redirect to private address
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get("location");
+      if (location) {
+        try {
+          await validateWebhookUrl(location);
+        } catch (err) {
+          await db.webhookFailure.update({
+            where: { id: failureId },
+            data: {
+              status: "FAILED",
+              errorMessage: `redirect blocked: ${location}`,
+              attemptCount: { increment: 1 },
+            },
+          });
+          return { success: false, error: "blocked redirect" };
+        }
+      }
     }
 
     await db.webhookFailure.update({

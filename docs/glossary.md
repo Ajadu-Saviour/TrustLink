@@ -79,13 +79,37 @@ Custom claim types can be registered by the admin for application-specific purpo
 
 ## Delegation
 
-The ability for an **issuer** to authorize another address to act on their behalf. TrustLink does not currently implement general delegation, but the **multi-signature attestation** flow (`propose_attestation` / `cosign_attestation`) allows a group of signers to collectively authorize an attestation, which achieves a similar effect for shared-custody issuers.
+The ability for an **issuer** to authorize another address to act on their behalf for specific claim types. TrustLink implements a complete delegation subsystem that allows issuers to delegate the authority to create attestations for specific claim types to other addresses.
+
+**Delegation Functions:**
+- `delegate_claim_type(issuer, delegate, claim_type, expiration)` – Grant delegation authority to an address for a specific claim type with optional expiration
+- `revoke_delegation(issuer, delegate, claim_type)` – Revoke delegation authority for a specific claim type
+- `revoke_delegation_all(delegator)` – Revoke all delegations issued by an address
+- `get_delegation(delegator, delegate, claim_type)` – Query a specific delegation
+- `list_delegations_by_delegator(delegator, start, limit)` – List all delegations issued by an address (paginated)
+
+**Supported Delegation Scenarios:**
+- Delegating claim-type-specific authority to trusted partners or team members
+- Time-bound delegations via optional expiration
+- Emergency delegation revocation via `revoke_delegation_all`
+- Integration with multi-signature workflows for shared-custody issuers
 
 ---
 
 ## Endorsement
 
-An informal term for an **attestation** in contexts that emphasize the trust relationship: an issuer *endorses* a subject by attesting a claim about them. The two terms are interchangeable in TrustLink documentation.
+A distinct on-chain feature where a registered **issuer** vouches for an existing **attestation** created by another issuer. An endorsement is a separate record that links an endorser address to an attestation ID with a timestamp, representing a third-party validation of the original claim.
+
+Unlike an **attestation** (which is a direct claim about a subject), an endorsement is a meta-claim: the endorser is stating "I verify that this existing attestation is trustworthy." Endorsements enable reputation networks where trust is built through accumulated third-party validation.
+
+Endorsements are managed via:
+- `endorse_attestation(env, endorser, attestation_id)` - create an endorsement
+- `get_endorsement_count(env, attestation_id)` - count endorsements on an attestation
+- `list_endorsements_by_endorser(env, endorser)` - list attestations endorsed by an issuer
+
+The following errors apply to endorsements:
+- `CannotEndorseOwn` - an issuer cannot endorse their own attestation
+- `AlreadyEndorsed` - an issuer has already endorsed this attestation
 
 ---
 
