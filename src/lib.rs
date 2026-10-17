@@ -34,10 +34,10 @@ use soroban_sdk::{contract, contractimpl, Address, Env, String, Vec};
 use crate::events::Events;
 use crate::storage::Storage;
 use crate::types::{
-    Attestation, AttestationRequest, AttestationStatus, AuditAction, AuditEntry, ClaimTypeInfo,
+    Attestation, AttestationBundle, AttestationRequest, AttestationStatus, AuditAction, AuditEntry, ClaimTypeInfo,
     ContractConfig, ContractMetadata, Endorsement, Error, FeeConfig, GlobalStats, HealthStatus,
-    IssuerMetadata, IssuerStats, IssuerTier, MultiSigProposal, RateLimitConfig, RequestStatus,
-    StorageLimits, TtlConfig, ATTESTATION_REQUEST_TTL_SECS, MULTISIG_PROPOSAL_TTL_SECS,
+    IssuerMetadata, IssuerStats, IssuerTier, MultiSigProposal, PendingAdminTransfer, RateLimitConfig, RequestStatus,
+    RevocationList, RevocationListFormat, StorageLimits, TtlConfig, ATTESTATION_REQUEST_TTL_SECS, MULTISIG_PROPOSAL_TTL_SECS,
 };
 
 #[contract]
@@ -501,6 +501,25 @@ impl TrustLinkContract {
         tags: Option<Vec<String>>,
     ) -> Result<(String, i128), Error> {
         attestation::simulate_create_attestation(&env, issuer, subject, claim_type, expiration, metadata, tags)
+    }
+
+    // -----------------------------------------------------------------------
+    // Bundles
+    // -----------------------------------------------------------------------
+
+    pub fn create_attestation_bundle(
+        env: Env,
+        issuer: Address,
+        subjects: Vec<Address>,
+        claim_type: String,
+        expiration: Option<u64>,
+    ) -> Result<String, Error> {
+        attestation::create_attestation_bundle(&env, issuer, subjects, claim_type, expiration)
+    }
+
+    #[must_use]
+    pub fn is_bundle_valid(env: Env, bundle_id: String) -> Result<bool, Error> {
+        attestation::is_bundle_valid(&env, bundle_id)
     }
 
     // -----------------------------------------------------------------------

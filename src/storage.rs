@@ -4,7 +4,7 @@
 
 use crate::constants::{DAY_IN_LEDGERS, DEFAULT_INSTANCE_LIFETIME};
 use crate::types::{
-    Attestation, AttestationRequest, AuditEntry, ClaimTypeInfo, Endorsement, Error, ExpirationHook,
+    Attestation, AttestationBundle, AttestationRequest, AuditEntry, ClaimTypeInfo, Endorsement, Error, ExpirationHook,
     FeeConfig, GlobalStats, IssuerMetadata, IssuerStats, IssuerTier, MultiSigProposal,
     RateLimitConfig, StorageLimits, TtlConfig,
 };
@@ -66,6 +66,8 @@ pub enum StorageKey {
     ProposalIndex(Address),
     /// Configurable TTL in days for multisig proposals (default: 7).
     MultisigTtl,
+    /// Attestation bundle keyed by bundle ID.
+    Bundle(String),
 }
 
 /// Composite key for per-issuer-per-claim-type last issuance timestamps.
@@ -1370,5 +1372,26 @@ impl ChunkedIndex {
 
     pub fn get_issuer_all(env: &Env, issuer: &Address) -> Vec<String> {
         Self::get_issuer_ids(env, issuer)
+    }
+}
+
+    // -----------------------------------------------------------------------
+    // Bundle operations
+    // -----------------------------------------------------------------------
+
+    pub fn set_bundle(env: &Env, bundle: &AttestationBundle) {
+        env.storage()
+            .persistent()
+            .set(&StorageKey::Bundle(bundle.id.clone()), bundle);
+        env.storage()
+            .persistent()
+            .extend_ttl(&StorageKey::Bundle(bundle.id.clone()), get_ttl_lifetime(env), get_ttl_lifetime(env));
+    }
+
+    pub fn get_bundle(env: &Env, bundle_id: &String) -> Result<AttestationBundle, Error> {
+        env.storage()
+            .persistent()
+            .get(&StorageKey::Bundle(bundle_id.clone()))
+            .ok_or(Error::NotFound)
     }
 }
