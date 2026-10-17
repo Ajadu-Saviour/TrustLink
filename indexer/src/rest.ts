@@ -9,6 +9,21 @@ import {
 } from "./export";
 import { getLastLedger } from "./indexer-state";
 import { getMetrics } from "./metrics";
+import { validateWebhookUrl } from "./webhook-validation";
+
+let rpcClient: any | null = null;
+
+async function getRpcClient() {
+  if (!rpcClient) {
+    const { rpc } = await import("@stellar/stellar-sdk");
+    const allowHttp = process.env.RPC_ALLOW_HTTP === "true" || process.env.NODE_ENV !== "production";
+    rpcClient = new rpc.Server(
+      process.env.RPC_URL ?? "https://soroban-testnet.stellar.org",
+      { allowHttp },
+    );
+  }
+  return rpcClient;
+}
 
 export function buildRestServer(db: PrismaClient): FastifyInstance {
   const fastify = Fastify({ logger: false });
@@ -38,29 +53,52 @@ export function buildRestServer(db: PrismaClient): FastifyInstance {
     };
   });
 
-  fastify.get("/ready", async () => {
-    const checkpoint = await db.checkpoint.findUnique({ where: { id: 1 } });
-    const rpc = new (await import("@stellar/stellar-sdk")).rpc.Server(
-      process.env.RPC_URL ?? "https://soroban-testnet.stellar.org",
-      { allowHttp: true },
-    );
-    const { sequence: tip } = await rpc.getLatestLedger();
-    const lag = tip - (checkpoint?.ledger ?? 0);
-    if (lag <= 10) {
-      return { status: 200 };
+  fastify.get("/ready", async (_request, reply) => {
+    const MAX_LAG = parseInt(process.env.MAX_LAG_LEDGERS ?? "10", 10);
+    try {
+      const checkpoint = await db.checkpoint.findUnique({ where: { id: 1 } });
+      const rpc = await getRpcClient();
+      const { sequence: tip } = await rpc.getLatestLedger();
+      const lag = tip - (checkpoint?.ledger ?? 0);
+      
+      if (lag <= MAX_LAG) {
+        return { status: "ready", lag };
+      } else {
+        reply.code(503);
+        return { status: "unavailable", reason: "indexer_lag_exceeded", lag, max: MAX_LAG };
+      }
+    } catch (err) {
+      reply.code(503);
+      const reason = err instanceof Error ? err.message : "unknown_error";
+      return { status: "unavailable", reason };
     }
-    return { status: 503 };
   });
 
   fastify.get("/metrics", async () => getMetrics());
 
-  fastify.get<{ Params: { subject: string } }>(
+  fastify.get<{ Params: { subject: string }; Querystring: { limit?: string; after?: string } }>(
     "/attestations/:subject",
-    async (req) =>
-      db.attestation.findMany({
-        where: { subject: req.params.subject },
-        orderBy: { timestamp: "desc" },
-      }),
+    async (req) => {
+      const limit = Math.min(parseInt(req.query.limit ?? "50", 10) || 50, 500);
+      const after = req.query.after;
+
+      const where: Record<string, any> = { subject: req.params.subject };
+      const cursor = after ? { id: after } : undefined;
+
+      const attestations = await db.attestation.findMany({
+        where,
+        orderBy: [{ timestamp: "desc" }, { id: "desc" }],
+        take: limit + 1,
+        skip: cursor ? 1 : 0,
+        cursor,
+      });
+
+      const hasMore = attestations.length > limit;
+      const items = attestations.slice(0, limit);
+      const nextCursor = hasMore ? items[items.length - 1]?.id : null;
+
+      return { items, nextCursor };
+    },
   );
 
   fastify.get<{ Params: { address: string; claim_type: string } }>(
@@ -77,13 +115,29 @@ export function buildRestServer(db: PrismaClient): FastifyInstance {
     },
   );
 
-  fastify.get<{ Params: { address: string } }>(
+  fastify.get<{ Params: { address: string }; Querystring: { limit?: string; after?: string } }>(
     "/issuers/:address/attestations",
-    async (req) =>
-      db.attestation.findMany({
-        where: { issuer: req.params.address },
-        orderBy: { timestamp: "desc" },
-      }),
+    async (req) => {
+      const limit = Math.min(parseInt(req.query.limit ?? "50", 10) || 50, 500);
+      const after = req.query.after;
+
+      const where: Record<string, any> = { issuer: req.params.address };
+      const cursor = after ? { id: after } : undefined;
+
+      const attestations = await db.attestation.findMany({
+        where,
+        orderBy: [{ timestamp: "desc" }, { id: "desc" }],
+        take: limit + 1,
+        skip: cursor ? 1 : 0,
+        cursor,
+      });
+
+      const hasMore = attestations.length > limit;
+      const items = attestations.slice(0, limit);
+      const nextCursor = hasMore ? items[items.length - 1]?.id : null;
+
+      return { items, nextCursor };
+    },
   );
 
   fastify.get<{
@@ -163,6 +217,14 @@ export function buildRestServer(db: PrismaClient): FastifyInstance {
         reply.code(400);
         return { error: "url and secret are required" };
       }
+
+      try {
+        await validateWebhookUrl(url);
+      } catch (err) {
+        reply.code(400);
+        return { error: err instanceof Error ? err.message : "invalid webhook url" };
+      }
+
       const webhook = await db.webhook.create({ data: { url, secret } });
       reply.code(201);
       return { id: webhook.id, url: webhook.url, active: webhook.active };
