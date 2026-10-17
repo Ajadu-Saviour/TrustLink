@@ -11,7 +11,6 @@ use crate::types::{
     StorageLimits, TtlConfig,
 };
 use soroban_sdk::{contracttype, Address, Env, String, Vec};
-use crate::types::{Attestation, Error, IssuerTier, IssuerMetadata};
 
 #[contracttype]
 pub enum StorageKey {
@@ -30,7 +29,6 @@ pub enum StorageKey {
     Attestation(String),
     SubjectAttestations(Address),
     IssuerAttestations(Address),
-    IssuerMetadata(Address),
     SubjectAttestationChunk(Address, u32),
     IssuerAttestationChunk(Address, u32),
     ClaimType(String),

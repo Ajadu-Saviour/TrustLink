@@ -1,4 +1,5 @@
 //! Shared data types and error codes for TrustLink.
+//! Shared data types and error codes for TrustLink.
 //!
 //! This module defines all contract types including:
 //! - Core attestation types (Attestation, AttestationRequest, MultiSigProposal)
@@ -7,29 +8,6 @@
 //! - Advanced features (Delegation, DisputeRecord, DecayConfig, AttestationTemplate, AttestationVersionSnapshot)
 //! - Utility types (GlobalStats, IssuerStats, HealthStatus, AuditEntry, Endorsement)
 
-/// Tier levels for issuers.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IssuerTier {
-    /// Basic issuer tier with standard capabilities.
-    Basic,
-    /// Advanced issuer tier with extended capabilities.
-    Advanced,
-    /// Premium issuer tier with all capabilities.
-    Premium,
-}
-
-/// Metadata about an issuer.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IssuerMetadata {
-    /// The issuer's address.
-    pub address: Address,
-    /// The issuer's current tier.
-    pub tier: IssuerTier,
-}
-
-/// A single attestation record stored on-chain.
 use soroban_sdk::{contracterror, contracttype, xdr::ToXdr, Address, Bytes, Env, String, Vec};
 
 /// Default lifetime for a multi-sig proposal: 7 days in seconds.

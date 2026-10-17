@@ -1,7 +1,4 @@
 use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
-
-use soroban_sdk::{symbol_short, Address, Env, String};
-use crate::types::{Attestation, IssuerTier};
 use crate::types::{Attestation, IssuerTier};
 
 // Event topic constants (max 9 chars for symbol_short!)
@@ -41,24 +38,6 @@ const TOPIC_MAX_SUBJ: Symbol = symbol_short!("mx_subj");
 pub struct Events;
 
 impl Events {
-    /// Emit an event when an issuer's tier is changed.
-    ///
-    /// # Event schema
-    /// ```text
-    /// topics: ("iss_tier", issuer: Address)
-    /// data:   tier: IssuerTier
-    /// ```
-    ///
-    /// # Parameters
-    /// - `issuer` — the issuer whose tier changed.
-    /// - `tier` — the new tier level.
-    pub fn issuer_tier_updated(env: &Env, issuer: &Address, tier: &IssuerTier) {
-        env.events().publish(
-            (symbol_short!("iss_tier"), issuer.clone()),
-            tier.clone(),
-        );
-    }
-
     /// Emit an event when a new attestation is created.
     ///
     /// # Event schema
