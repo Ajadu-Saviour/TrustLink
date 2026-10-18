@@ -52,6 +52,11 @@ const WATCHED = new Set([
   "ms_actv",
   "iss_reg",
   "rate_limit_set", // #775
+  "att_req",        // attestation request created
+  "req_ok",         // request fulfilled
+  "req_no",         // request rejected
+  "req_cncl",       // request cancelled by subject
+  "req_exp",        // request expired (emitted by cleanup_expired_requests)
 ]);
 
 import { getLastLedger, setLastLedger } from "./indexer-state";
@@ -222,6 +227,72 @@ export async function handleEvent(
   try {
   eventsProcessedTotal.inc();
   const data = scValToNative(ev.value) as unknown[];
+
+  // ── Attestation request lifecycle events ──────────────────────────────────
+  //
+  // att_req  topics=[att_req, issuer]  data=[request_id, subject, claim_type, expires_at]
+  // req_ok   topics=[req_ok, issuer]   data=[request_id, attestation_id]
+  // req_no   topics=[req_no, issuer]   data=[request_id, reason]
+  // req_cncl topics=[req_cncl,subject] data=request_id
+  // req_exp  topics=[req_exp, issuer]  data=[request_id, subject, expires_at]
+
+  if (topicStr === "att_req") {
+    const issuerAddr = ev.topic[1] ? String(scValToNative(ev.topic[1])) : "";
+    const [requestId, subjectAddr, claimType, expiresAt] = data as [string, string, string, bigint];
+    const requestedAt = BigInt(ev.ledger);
+    await db.attestationRequest.upsert({
+      where: { id: requestId },
+      update: {},
+      create: {
+        id: requestId,
+        subject: subjectAddr,
+        issuer: issuerAddr,
+        claimType: String(claimType),
+        requestedAt,
+        expiresAt: BigInt(expiresAt),
+        status: "PENDING",
+      },
+    });
+    return;
+  }
+
+  if (topicStr === "req_ok") {
+    const [requestId, attestationId] = data as [string, string];
+    await db.attestationRequest.updateMany({
+      where: { id: requestId, status: "PENDING" },
+      data: { status: "FULFILLED", fulfillmentId: attestationId },
+    });
+    return;
+  }
+
+  if (topicStr === "req_no") {
+    const [requestId, reason] = data as [string, string | null];
+    await db.attestationRequest.updateMany({
+      where: { id: requestId, status: "PENDING" },
+      data: { status: "REJECTED", rejectionReason: reason ?? null },
+    });
+    return;
+  }
+
+  if (topicStr === "req_cncl") {
+    const requestId = String(data[0]);
+    await db.attestationRequest.updateMany({
+      where: { id: requestId, status: "PENDING" },
+      data: { status: "CANCELLED" },
+    });
+    return;
+  }
+
+  if (topicStr === "req_exp") {
+    // data = [request_id, subject, expires_at]
+    // Transitions PENDING → EXPIRED. Uses updateMany so replaying is a no-op.
+    const requestId = String(data[0]);
+    await db.attestationRequest.updateMany({
+      where: { id: requestId, status: "PENDING" },
+      data: { status: "EXPIRED" },
+    });
+    return;
+  }
 
   // ── Multi-sig events ───────────────────────────────────────────────────────
 
@@ -580,6 +651,11 @@ function normalizeEventType(topic: string): EventType | null {
     ms_actv: EventTypes.MULTISIG_ACTIVATED,
     adm_init: EventTypes.ADMIN_INIT,
     adm_xfer: EventTypes.ADMIN_TRANSFER,
+    att_req:  EventTypes.REQUEST_EXPIRED, // reuse bucket — request events share metrics
+    req_ok:   EventTypes.REQUEST_EXPIRED,
+    req_no:   EventTypes.REQUEST_EXPIRED,
+    req_cncl: EventTypes.REQUEST_EXPIRED,
+    req_exp:  EventTypes.REQUEST_EXPIRED,
   };
   return mapping[topic] ?? null;
 }

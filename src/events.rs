@@ -344,6 +344,27 @@ impl Events {
         );
     }
 
+    /// Emitted by `cleanup_expired_requests` for each request whose
+    /// `expires_at` has passed and whose status is being set to `Expired`.
+    ///
+    /// # Event schema
+    /// ```text
+    /// topics: ("req_exp", issuer: Address)
+    /// data:   (request_id: String, subject: Address, expires_at: u64)
+    /// ```
+    pub fn request_expired(
+        env: &Env,
+        request_id: &String,
+        issuer: &Address,
+        subject: &Address,
+        expires_at: u64,
+    ) {
+        env.events().publish(
+            (symbol_short!("req_exp"), issuer.clone()),
+            (request_id.clone(), subject.clone(), expires_at),
+        );
+    }
+
     /// Emitted when issuer creates a delegation to a sub-issuer for a claim type.
     pub fn delegation_created(
         env: &Env,
