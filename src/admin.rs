@@ -145,7 +145,9 @@ pub fn get_issuer_list(env: &Env, start: u32, limit: u32) -> Vec<Address> {
 pub fn add_to_whitelist(env: &Env, issuer: Address, subject: Address) -> Result<(), Error> {
     issuer.require_auth();
     Validation::require_issuer(env, &issuer)?;
+    Validation::require_not_paused(env)?;
     Storage::add_to_whitelist(env, &issuer, &subject);
+    Events::whitelist_updated(env, &issuer, &subject, true);
     Ok(())
 }
 
@@ -153,11 +155,13 @@ pub fn bulk_add_to_whitelist(env: &Env, issuer: Address, subjects: Vec<Address>)
     const MAX_BATCH: u32 = 50;
     issuer.require_auth();
     Validation::require_issuer(env, &issuer)?;
+    Validation::require_not_paused(env)?;
     if subjects.len() > MAX_BATCH {
         return Err(Error::LimitExceeded);
     }
     for subject in subjects.iter() {
         Storage::add_to_whitelist(env, &issuer, &subject);
+        Events::whitelist_updated(env, &issuer, &subject, true);
     }
     Ok(())
 }
@@ -165,7 +169,9 @@ pub fn bulk_add_to_whitelist(env: &Env, issuer: Address, subjects: Vec<Address>)
 pub fn remove_from_whitelist(env: &Env, issuer: Address, subject: Address) -> Result<(), Error> {
     issuer.require_auth();
     Validation::require_issuer(env, &issuer)?;
+    Validation::require_not_paused(env)?;
     Storage::remove_from_whitelist(env, &issuer, &subject);
+    Events::whitelist_updated(env, &issuer, &subject, false);
     Ok(())
 }
 
@@ -305,13 +311,20 @@ pub fn get_bridge_list(env: &Env, start: u32, limit: u32) -> Vec<Address> {
 pub fn set_whitelist_enabled(env: &Env, issuer: Address, enabled: bool) -> Result<(), Error> {
     issuer.require_auth();
     Validation::require_issuer(env, &issuer)?;
+    Validation::require_not_paused(env)?;
     Storage::set_whitelist_enabled(env, &issuer, enabled);
+    if enabled {
+        Events::whitelist_mode_enabled(env, &issuer);
+    } else {
+        Events::whitelist_mode_disabled(env, &issuer);
+    }
     Ok(())
 }
 
 pub fn enable_whitelist_mode(env: &Env, issuer: Address) -> Result<(), Error> {
     issuer.require_auth();
     Validation::require_issuer(env, &issuer)?;
+    Validation::require_not_paused(env)?;
     Storage::set_whitelist_mode(env, &issuer, true);
     Events::whitelist_mode_enabled(env, &issuer);
     Ok(())
@@ -403,7 +416,7 @@ pub fn is_paused(env: &Env) -> bool {
 pub fn set_require_registered_claim_type(env: &Env, admin: Address, require: bool) -> Result<(), Error> {
     admin.require_auth();
     Validation::require_admin(env, &admin)?;
-    
+
     let mut config = Storage::get_contract_config(env).unwrap_or_else(|| {
         ContractConfig {
             contract_name: soroban_sdk::String::from_str(env, "TrustLink"),
@@ -421,7 +434,7 @@ pub fn set_require_registered_claim_type(env: &Env, admin: Address, require: boo
             chunk_size: 50,
         }
     });
-    
+
     config.require_registered_claim_type = require;
     Storage::set_contract_config(env, &config);
     Ok(())

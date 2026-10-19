@@ -29,6 +29,7 @@ const TOPIC_REQ_OK: Symbol = symbol_short!("req_ok");
 const TOPIC_REQ_NO: Symbol = symbol_short!("req_no");
 const TOPIC_REQ_CANCEL: Symbol = symbol_short!("req_cncl");
 const TOPIC_WL_ON: Symbol = symbol_short!("wl_on");
+const TOPIC_WL_OFF: Symbol = symbol_short!("wl_off");
 const TOPIC_WL_ADD: Symbol = symbol_short!("wl_add");
 const TOPIC_WL_REM: Symbol = symbol_short!("wl_rem");
 const TOPIC_TPL_DEL: Symbol = symbol_short!("tpl_del");
@@ -373,6 +374,11 @@ impl Events {
     pub fn whitelist_mode_enabled(env: &Env, issuer: &Address) {
         env.events()
             .publish((TOPIC_WL_ON, issuer.clone()), ());
+    }
+
+    pub fn whitelist_mode_disabled(env: &Env, issuer: &Address) {
+        env.events()
+            .publish((TOPIC_WL_OFF, issuer.clone()), ());
     }
 
     pub fn whitelist_updated(env: &Env, issuer: &Address, subject: &Address, added: bool) {
