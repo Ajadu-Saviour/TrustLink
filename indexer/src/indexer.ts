@@ -52,6 +52,10 @@ const WATCHED = new Set([
   "ms_actv",
   "iss_reg",
   "rate_limit_set", // #775
+  "wl_add",
+  "wl_rem",
+  "wl_on",
+  "wl_off",
 ]);
 
 import { getLastLedger, setLastLedger } from "./indexer-state";
@@ -289,6 +293,33 @@ export async function handleEvent(
     });
     const ratio = rateLimit > 0 ? attestationCount / rateLimit : 0;
     setIssuerRateLimitRatio(issuerAddr, ratio);
+    return;
+  }
+
+  // ── #1577: Whitelist events ────────────────────────────────────────────────
+
+  if (topicStr === "wl_add" || topicStr === "wl_rem") {
+    const issuerAddr = ev.topic[1] ? String(scValToNative(ev.topic[1])) : "";
+    const subjectAddr = String(data[0]);
+    const added = topicStr === "wl_add";
+
+    await db.whitelistEntry.upsert({
+      where: { issuer_subject: { issuer: issuerAddr, subject: subjectAddr } },
+      update: { added },
+      create: { issuer: issuerAddr, subject: subjectAddr, added },
+    });
+    return;
+  }
+
+  if (topicStr === "wl_on" || topicStr === "wl_off") {
+    const issuerAddr = ev.topic[1] ? String(scValToNative(ev.topic[1])) : "";
+    const enabled = topicStr === "wl_on";
+
+    await db.issuer.upsert({
+      where: { address: issuerAddr },
+      update: { whitelistEnabled: enabled },
+      create: { address: issuerAddr, whitelistEnabled: enabled },
+    });
     return;
   }
 
