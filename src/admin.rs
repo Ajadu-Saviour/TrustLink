@@ -928,6 +928,56 @@ pub fn resolve_dispute(env: &Env, resolver: Address, attestation_id: String) -> 
 }
 
 // -----------------------------------------------------------------------
+// Config & metadata getters
+// -----------------------------------------------------------------------
+
+/// Return a full snapshot of the contract configuration.
+///
+/// Falls back to sensible defaults for any field not yet explicitly set,
+/// ensuring backward compatibility with contracts initialised before a
+/// particular config key existed.
+pub fn get_config(env: &Env) -> ContractConfig {
+    if let Some(config) = Storage::get_contract_config(env) {
+        config
+    } else {
+        ContractConfig {
+            contract_name: soroban_sdk::String::from_str(env, "TrustLink"),
+            contract_version: soroban_sdk::String::from_str(env, ""),
+            contract_description: soroban_sdk::String::from_str(
+                env,
+                "On-chain attestation and verification system for the Stellar blockchain.",
+            ),
+            ttl_config: Storage::get_ttl_config(env).unwrap_or(TtlConfig { ttl_days: 30 }),
+            fee_config: Storage::get_fee_config(env).unwrap_or_else(|| FeeConfig {
+                attestation_fee: 0,
+                fee_collector: env.current_contract_address(),
+                fee_token: None,
+            }),
+            require_registered_claim_type: false,
+            metadata_hash_only: false,
+            max_attestations_per_subject: None,
+            chunk_size: get_chunk_size(env),
+        }
+    }
+}
+
+/// Return static contract metadata (name, version, description).
+///
+/// # Errors
+/// - [`Error::NotInitialized`] — contract has not been initialised.
+pub fn get_contract_metadata(env: &Env) -> Result<crate::types::ContractMetadata, Error> {
+    let version = Storage::get_version(env).ok_or(Error::NotInitialized)?;
+    Ok(crate::types::ContractMetadata {
+        name: soroban_sdk::String::from_str(env, "TrustLink"),
+        version,
+        description: soroban_sdk::String::from_str(
+            env,
+            "On-chain attestation and verification system for the Stellar blockchain.",
+        ),
+    })
+}
+
+// -----------------------------------------------------------------------
 // Internal helpers
 // -----------------------------------------------------------------------
 
