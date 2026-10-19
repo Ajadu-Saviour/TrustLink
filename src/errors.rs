@@ -94,4 +94,6 @@ pub enum Error {
     VersionMismatch = 47,
     /// Feature not yet implemented.
     NotImplemented = 48,
+    /// Invalid configuration value (e.g., min > max for constraints).
+    InvalidConfigValue = 49,
 }
