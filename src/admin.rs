@@ -263,10 +263,41 @@ pub fn get_issuer_metadata(env: &Env, issuer: Address) -> Option<IssuerMetadata>
     Storage::get_issuer_metadata(env, &issuer)
 }
 
+const MAXIssuer_NAME_LEN: u32 = 64;
+const MAXIssuer_URL_LEN: u32 = 256;
+const MAXIssuer_DESC_LEN: u32 = 512;
+
 pub fn set_issuer_metadata(env: &Env, issuer: Address, metadata: IssuerMetadata) -> Result<(), Error> {
     issuer.require_auth();
     Validation::require_issuer(env, &issuer)?;
+    Validation::require_not_paused(env)?;
+
+    // Validate name length
+    let name_len = metadata.name.len();
+    if name_len > MAXIssuer_NAME_LEN {
+        return Err(Error::MetadataTooLong);
+    }
+
+    // Validate URL length and scheme
+    let url_len = metadata.url.len();
+    if url_len > MAXIssuer_URL_LEN {
+        return Err(Error::MetadataTooLong);
+    }
+    if url_len > 0 {
+        let url_slice = metadata.url.as_bytes();
+        if url_slice.len() < 6 || &url_slice[..6] != b"https:" {
+            return Err(Error::InvalidMetadata);
+        }
+    }
+
+    // Validate description length
+    let desc_len = metadata.description.len();
+    if desc_len > MAXIssuer_DESC_LEN {
+        return Err(Error::MetadataTooLong);
+    }
+
     Storage::set_issuer_metadata(env, &issuer, &metadata);
+    Events::issuer_metadata_updated(env, &issuer, &metadata);
     Ok(())
 }
 
@@ -587,11 +618,40 @@ pub fn list_claim_types(env: &Env, start: u32, limit: u32) -> Vec<String> {
     crate::storage::paginate(env, &Storage::get_claim_type_list(env), start, limit)
 }
 
+const MAX_METADATA_LEN: u32 = 256;
+
 pub fn set_claim_type_constraints(env: &Env, admin: Address, claim_type: String, constraints: crate::types::ClaimTypeConstraints) -> Result<(), Error> {
     admin.require_auth();
     Validation::require_admin(env, &admin)?;
     Validation::validate_claim_type(&claim_type)?;
+    Validation::require_not_paused(env)?;
+
+    // Validate min <= max if both are set
+    if let (Some(min), Some(max)) = (constraints.min_metadata_len, constraints.max_metadata_len) {
+        if min > max {
+            return Err(Error::InvalidConfigValue);
+        }
+        if max > MAX_METADATA_LEN {
+            return Err(Error::MetadataTooLong);
+        }
+    }
+
+    // If min is set but require_metadata is false, warn but allow (for compatibility)
+    // In practice, this config is confusing but not technically invalid
+
     Storage::set_claim_type_constraints(env, &claim_type, &constraints);
+    Events::claim_type_constraints_updated(env, &claim_type, &Some(constraints));
+    Ok(())
+}
+
+pub fn clear_claim_type_constraints(env: &Env, admin: Address, claim_type: String) -> Result<(), Error> {
+    admin.require_auth();
+    Validation::require_admin(env, &admin)?;
+    Validation::validate_claim_type(&claim_type)?;
+    Validation::require_not_paused(env)?;
+
+    Storage::remove_claim_type_constraints(env, &claim_type);
+    Events::claim_type_constraints_updated(env, &claim_type, &None);
     Ok(())
 }
 

@@ -160,6 +160,23 @@ impl TrustLinkContract {
         admin::add_to_whitelist(&env, issuer, subject)
     }
 
+    /// Bulk-add multiple subjects to the issuer's whitelist.
+    ///
+    /// Adds each subject to the whitelist in a single call. Emits a whitelist
+    /// event for each successful addition.
+    ///
+    /// # Parameters
+    /// - `issuer` — registered issuer address (must authorize).
+    /// - `subjects` — list of subject addresses to whitelist.
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] — `issuer` is not a registered issuer.
+    /// - [`Error::LimitExceeded`] — `subjects.len()` exceeds 50.
+    /// - [`Error::ContractPaused`] — contract is paused.
+    pub fn bulk_add_to_whitelist(env: Env, issuer: Address, subjects: Vec<Address>) -> Result<(), Error> {
+        admin::bulk_add_to_whitelist(&env, issuer, subjects)
+    }
+
     pub fn remove_from_whitelist(env: Env, issuer: Address, subject: Address) -> Result<(), Error> {
         admin::remove_from_whitelist(&env, issuer, subject)
     }
@@ -392,6 +409,23 @@ impl TrustLinkContract {
 
     pub fn set_claim_type_constraints(env: Env, admin: Address, claim_type: String, constraints: types::ClaimTypeConstraints) -> Result<(), Error> {
         admin::set_claim_type_constraints(&env, admin, claim_type, constraints)
+    }
+
+    /// Clear (remove) constraints for a specific claim type.
+    ///
+    /// Removes all metadata constraints previously set for the claim type,
+    /// reverting to the default behavior (no constraints).
+    ///
+    /// # Parameters
+    /// - `admin` — current administrator address (must authorize).
+    /// - `claim_type` — the claim type to clear constraints for.
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] — `admin` is not the registered administrator.
+    /// - [`Error::NotFound`] — `claim_type` is not in the registry.
+    /// - [`Error::ContractPaused`] — contract is paused.
+    pub fn clear_claim_type_constraints(env: Env, admin: Address, claim_type: String) -> Result<(), Error> {
+        admin::clear_claim_type_constraints(&env, admin, claim_type)
     }
 
     #[must_use]
@@ -900,10 +934,20 @@ impl TrustLinkContract {
         attestation::revoke_attestations_batch(&env, issuer, attestation_ids, reason)
     }
 
-    /// Fetch the full attestation record by ID.
+    /// Set the TTL (time-to-live) for multisig proposals.
+    ///
+    /// Controls how long a multisig proposal remains valid before expiring.
+    /// The TTL is specified in days and applies only to proposals created
+    /// after this call; existing proposals retain their original expiration.
+    ///
+    /// Default: 7 days.
+    ///
+    /// # Parameters
+    /// - `admin` — current administrator address (must authorize).
+    /// - `days` — TTL in days (1-365, subject to bounds validation once added).
     ///
     /// # Errors
-    /// - [`Error::Unauthorized`] — caller is not the admin.
+    /// - [`Error::Unauthorized`] — `admin` is not the registered administrator.
     pub fn set_multisig_ttl(env: Env, admin: Address, days: u32) -> Result<(), Error> {
         admin.require_auth();
         Validation::require_admin(&env, &admin)?;

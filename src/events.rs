@@ -14,6 +14,7 @@ const TOPIC_DEL_REQ: Symbol = symbol_short!("del_req");
 const TOPIC_ISS_REG: Symbol = symbol_short!("iss_reg");
 const TOPIC_ISS_TIER: Symbol = symbol_short!("iss_tier");
 const TOPIC_ISS_REM: Symbol = symbol_short!("iss_rem");
+const TOPIC_CLM_CONS: Symbol = symbol_short!("clm_cons");
 const TOPIC_CLM_TYPE: Symbol = symbol_short!("clm_type");
 const TOPIC_MS_PROP: Symbol = symbol_short!("ms_prop");
 const TOPIC_MS_SIGN: Symbol = symbol_short!("ms_sign");
@@ -166,6 +167,13 @@ impl Events {
         env.events().publish(
             (TOPIC_ISS_REM, issuer.clone()),
             (admin.clone(), timestamp),
+        );
+    }
+
+    pub fn issuer_metadata_updated(env: &Env, issuer: &Address, metadata: &IssuerMetadata) {
+        env.events().publish(
+            (symbol_short!("iss_meta"), issuer.clone()),
+            (metadata.name.clone(), metadata.url.clone()),
         );
     }
 
@@ -490,6 +498,14 @@ impl Events {
                 "max_per_subject",
                 limit.unwrap_or(0),
             ),
+        );
+    }
+
+    /// Emitted when claim type constraints are set or cleared.
+    pub fn claim_type_constraints_updated(env: &Env, claim_type: &String, constraints: &Option<crate::types::ClaimTypeConstraints>) {
+        env.events().publish(
+            (TOPIC_CLM_CONS, claim_type.clone()),
+            constraints,
         );
     }
 }
