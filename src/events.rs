@@ -14,6 +14,7 @@ const TOPIC_DEL_REQ: Symbol = symbol_short!("del_req");
 const TOPIC_ISS_REG: Symbol = symbol_short!("iss_reg");
 const TOPIC_ISS_TIER: Symbol = symbol_short!("iss_tier");
 const TOPIC_ISS_REM: Symbol = symbol_short!("iss_rem");
+const TOPIC_CLM_CONS: Symbol = symbol_short!("clm_cons");
 const TOPIC_CLM_TYPE: Symbol = symbol_short!("clm_type");
 const TOPIC_MS_PROP: Symbol = symbol_short!("ms_prop");
 const TOPIC_MS_SIGN: Symbol = symbol_short!("ms_sign");
@@ -29,6 +30,7 @@ const TOPIC_REQ_OK: Symbol = symbol_short!("req_ok");
 const TOPIC_REQ_NO: Symbol = symbol_short!("req_no");
 const TOPIC_REQ_CANCEL: Symbol = symbol_short!("req_cncl");
 const TOPIC_WL_ON: Symbol = symbol_short!("wl_on");
+const TOPIC_WL_OFF: Symbol = symbol_short!("wl_off");
 const TOPIC_WL_ADD: Symbol = symbol_short!("wl_add");
 const TOPIC_WL_REM: Symbol = symbol_short!("wl_rem");
 const TOPIC_TPL_DEL: Symbol = symbol_short!("tpl_del");
@@ -165,6 +167,13 @@ impl Events {
         env.events().publish(
             (TOPIC_ISS_REM, issuer.clone()),
             (admin.clone(), timestamp),
+        );
+    }
+
+    pub fn issuer_metadata_updated(env: &Env, issuer: &Address, metadata: &IssuerMetadata) {
+        env.events().publish(
+            (symbol_short!("iss_meta"), issuer.clone()),
+            (metadata.name.clone(), metadata.url.clone()),
         );
     }
 
@@ -396,6 +405,11 @@ impl Events {
             .publish((TOPIC_WL_ON, issuer.clone()), ());
     }
 
+    pub fn whitelist_mode_disabled(env: &Env, issuer: &Address) {
+        env.events()
+            .publish((TOPIC_WL_OFF, issuer.clone()), ());
+    }
+
     pub fn whitelist_updated(env: &Env, issuer: &Address, subject: &Address, added: bool) {
         let sym = if added { TOPIC_WL_ADD } else { TOPIC_WL_REM };
         env.events().publish((sym, issuer.clone()), subject.clone());
@@ -505,6 +519,14 @@ impl Events {
                 "max_per_subject",
                 limit.unwrap_or(0),
             ),
+        );
+    }
+
+    /// Emitted when claim type constraints are set or cleared.
+    pub fn claim_type_constraints_updated(env: &Env, claim_type: &String, constraints: &Option<crate::types::ClaimTypeConstraints>) {
+        env.events().publish(
+            (TOPIC_CLM_CONS, claim_type.clone()),
+            constraints,
         );
     }
 }

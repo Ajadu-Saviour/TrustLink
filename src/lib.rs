@@ -123,7 +123,49 @@ impl TrustLinkContract {
     }
 
     pub fn set_issuer_tier(env: Env, admin: Address, issuer: Address, tier: IssuerTier) -> Result<(), Error> {
-        admin::set_issuer_tier(&env, admin, issuer, tier)
+        admin.require_auth();
+        Validation::require_admin(&env, &admin)?;
+
+        Storage::set_issuer_tier(&env, &issuer, tier.clone())?;
+        Events::issuer_tier_updated(&env, &issuer, &tier);
+        Ok(())
+    }
+
+    /// Create a new attestation about a subject address.
+    ///
+    /// The attestation ID is derived deterministically from `(issuer, subject,
+    /// claim_type, timestamp)`, so the same combination at the same ledger
+    /// timestamp will always produce the same ID.
+    ///
+    /// Emits an [`events::Events::attestation_created`] event on success.
+    pub fn add_to_whitelist(env: Env, issuer: Address, subject: Address) -> Result<(), Error> {
+        admin::add_to_whitelist(&env, issuer, subject)
+    }
+
+    /// Bulk-add multiple subjects to the issuer's whitelist.
+    ///
+    /// Adds each subject to the whitelist in a single call. Emits a whitelist
+    /// event for each successful addition.
+    ///
+    /// # Parameters
+    /// - `issuer` — registered issuer address (must authorize).
+    /// - `subjects` — list of subject addresses to whitelist.
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] — `issuer` is not a registered issuer.
+    /// - [`Error::LimitExceeded`] — `subjects.len()` exceeds 50.
+    /// - [`Error::ContractPaused`] — contract is paused.
+    pub fn bulk_add_to_whitelist(env: Env, issuer: Address, subjects: Vec<Address>) -> Result<(), Error> {
+        admin::bulk_add_to_whitelist(&env, issuer, subjects)
+    }
+
+    pub fn remove_from_whitelist(env: Env, issuer: Address, subject: Address) -> Result<(), Error> {
+        admin::remove_from_whitelist(&env, issuer, subject)
+    }
+
+    #[must_use]
+    pub fn is_whitelisted(env: Env, issuer: Address, subject: Address) -> bool {
+        admin::is_whitelisted(&env, issuer, subject)
     }
 
     #[must_use]
@@ -343,6 +385,23 @@ impl TrustLinkContract {
 
     pub fn set_claim_type_constraints(env: Env, admin: Address, claim_type: String, constraints: ClaimTypeConstraints) -> Result<(), Error> {
         admin::set_claim_type_constraints(&env, admin, claim_type, constraints)
+    }
+
+    /// Clear (remove) constraints for a specific claim type.
+    ///
+    /// Removes all metadata constraints previously set for the claim type,
+    /// reverting to the default behavior (no constraints).
+    ///
+    /// # Parameters
+    /// - `admin` — current administrator address (must authorize).
+    /// - `claim_type` — the claim type to clear constraints for.
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] — `admin` is not the registered administrator.
+    /// - [`Error::NotFound`] — `claim_type` is not in the registry.
+    /// - [`Error::ContractPaused`] — contract is paused.
+    pub fn clear_claim_type_constraints(env: Env, admin: Address, claim_type: String) -> Result<(), Error> {
+        admin::clear_claim_type_constraints(&env, admin, claim_type)
     }
 
     #[must_use]
@@ -791,15 +850,75 @@ impl TrustLinkContract {
         request::cleanup_expired_requests(&env, issuer)
     }
 
-    // -----------------------------------------------------------------------
-    // Attestation templates
-    // -----------------------------------------------------------------------
-
-    pub fn create_template(env: Env, issuer: Address, template_id: String, tmpl: AttestationTemplate) -> Result<(), Error> {
-        template::create_template(&env, issuer, template_id, tmpl)
+    /// Set the TTL (time-to-live) for multisig proposals.
+    ///
+    /// Controls how long a multisig proposal remains valid before expiring.
+    /// The TTL is specified in days and applies only to proposals created
+    /// after this call; existing proposals retain their original expiration.
+    ///
+    /// Default: 7 days.
+    ///
+    /// # Parameters
+    /// - `admin` — current administrator address (must authorize).
+    /// - `days` — TTL in days (1-365, subject to bounds validation once added).
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] — `admin` is not the registered administrator.
+    pub fn set_multisig_ttl(env: Env, admin: Address, days: u32) -> Result<(), Error> {
+        admin.require_auth();
+        Validation::require_admin(&env, &admin)?;
+        Storage::set_multisig_ttl(&env, days);
+        Ok(())
     }
 
-    pub fn create_attestation_from_template(
+    /// Cancel an unfinalized multisig proposal.
+    ///
+    /// Only the original proposer may cancel. Cancelled proposals are excluded
+    /// from future `cosign_attestation` calls (returns `ProposalExpired`).
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] — proposal does not exist.
+    /// - [`Error::Unauthorized`] — caller is not the original proposer.
+    /// - [`Error::ProposalFinalized`] — proposal has already been finalized.
+    /// - [`Error::ProposalCancelled`] — proposal is already cancelled.
+    pub fn cancel_multisig_proposal(
+        env: Env,
+        proposer: Address,
+        proposal_id: String,
+    ) -> Result<(), Error> {
+        proposer.require_auth();
+        Validation::require_not_paused(&env)?;
+
+        let mut proposal = Storage::get_multisig_proposal(&env, &proposal_id)?;
+
+        if proposal.proposer != proposer {
+            return Err(Error::Unauthorized);
+        }
+
+        if proposal.finalized {
+            return Err(Error::ProposalFinalized);
+        }
+
+        if proposal.cancelled {
+            return Err(Error::ProposalCancelled);
+        }
+
+        proposal.cancelled = true;
+        Storage::set_multisig_proposal(&env, &proposal);
+        Events::multisig_cancelled(&env, &proposal_id, &proposer);
+        Ok(())
+    }
+
+    /// List open (unfinalized, unexpired, uncancelled) proposals for a subject.
+    ///
+    /// Returns a paginated slice of proposals where `finalized == false`,
+    /// `cancelled == false`, and `expires_at > now`.
+    ///
+    /// # Parameters
+    /// - `subject` — the subject address whose proposals to query.
+    /// - `start` — zero-based offset into the filtered list.
+    /// - `limit` — maximum number of proposals to return.
+    pub fn list_open_proposals(
         env: Env,
         issuer: Address,
         template_id: String,

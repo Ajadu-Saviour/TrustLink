@@ -282,9 +282,10 @@ impl Storage {
         env.storage().persistent().extend_ttl(&key, INSTANCE_LIFETIME, INSTANCE_LIFETIME);
         
         // Initialize issuer metadata with Basic tier
-        let metadata = IssuerMetadata {
-            address: issuer.clone(),
-            tier: IssuerTier::Basic,
+        let metadata = crate::types::IssuerMetadata {
+            name: String::from_str(env, ""),
+            url: String::from_str(env, ""),
+            description: String::from_str(env, ""),
         };
         let metadata_key = StorageKey::IssuerMetadata(issuer.clone());
         env.storage().persistent().set(&metadata_key, &metadata);
@@ -321,11 +322,7 @@ impl Storage {
         if !Self::is_issuer(env, issuer) {
             return Err(Error::NotFound);
         }
-        
-        let mut metadata = Self::get_issuer_metadata(env, issuer)?;
-        metadata.tier = tier;
-        
-        let key = StorageKey::IssuerMetadata(issuer.clone());
+        let key = StorageKey::IssuerMetadata(issuer.clone())
         env.storage().persistent().set(&key, &metadata);
         env.storage().persistent().extend_ttl(&key, INSTANCE_LIFETIME, INSTANCE_LIFETIME);
         
@@ -500,6 +497,10 @@ impl Storage {
 
     pub fn get_claim_type_constraints(env: &Env, claim_type: &String) -> Option<crate::types::ClaimTypeConstraints> {
         env.storage().persistent().get(&StorageKey::ClaimTypeConstraints(claim_type.clone()))
+    }
+
+    pub fn remove_claim_type_constraints(env: &Env, claim_type: &String) {
+        env.storage().persistent().remove(&StorageKey::ClaimTypeConstraints(claim_type.clone()));
     }
 
     pub fn set_whitelist_mode(env: &Env, issuer: &Address, enabled: bool) {
